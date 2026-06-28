@@ -223,7 +223,6 @@ function useFeedback(soundOn) {
    - users 테이블: username, password, name, admin_type (1=관리자, 2=작업자)
    - admin_type === 1 인 사용자만 관리자 페이지 접근 가능
    - Supabase URL/KEY를 채우면 users 테이블로 실제 로그인, 비우면 아래 데모 계정으로 동작
-   https://wlrdsjgdmnaplfysztkm.supabase.co/rest/v1/
 */
 
 // ▼ 배포 시 본인 Supabase 프로젝트 값으로 채우세요 (비워두면 데모 모드로 동작)
@@ -1089,7 +1088,7 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
    7. 관리자 페이지
    ============================================================ */
 
-function AdminPage({ pallets, setPallets, items, setItems, types, setTypes, logs, addLog, user, onLogout, goWorker }) {
+function AdminPage({ pallets, setPallets, items, setItems, types, setTypes, logs, addLog, user, onLogout, api, goWorker }) {
   const [tab, setTab] = useState("dashboard");
 
   return (
