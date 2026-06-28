@@ -223,10 +223,11 @@ function useFeedback(soundOn) {
    - users 테이블: username, password, name, admin_type (1=관리자, 2=작업자)
    - admin_type === 1 인 사용자만 관리자 페이지 접근 가능
    - Supabase URL/KEY를 채우면 users 테이블로 실제 로그인, 비우면 아래 데모 계정으로 동작
+   https://wlrdsjgdmnaplfysztkm.supabase.co/rest/v1/
 */
 
 // ▼ 배포 시 본인 Supabase 프로젝트 값으로 채우세요 (비워두면 데모 모드로 동작)
-const SUPABASE_URL = "https://wlrdsjgdmnapifysztkm.supabase.co";       // 예: https://xxxxxxxx.supabase.co
+const SUPABASE_URL = "https://wlrdsjgdmnaplfysztkm.supabase.co";       // 예: https://xxxxxxxx.supabase.co
 const SUPABASE_ANON_KEY = "sb_publishable_VRiue_JGGbExOeSKOZC_vg_om4Q3XV5";  // 예: eyJhbGciOi...
 
 // 데모/오프라인 계정 (Supabase 미설정 시 사용) — users 테이블 시드와 동일하게 유지
