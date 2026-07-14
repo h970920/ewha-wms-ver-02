@@ -227,7 +227,7 @@ function useFeedback(soundOn) {
 
 // ▼ 배포 시 본인 Supabase 프로젝트 값으로 채우세요 (비워두면 데모 모드로 동작)
 const SUPABASE_URL = "https://qaxghfthncztpmspkzyk.supabase.co";       // 예: https://xxxxxxxx.supabase.co
-const SUPABASE_ANON_KEY = "sb_publishable_VRiue_JGGbExOeSKOZC_vg_om4Q3XV5";  // 예: eyJhbGciOi...
+const SUPABASE_ANON_KEY = "sb_publishable_yZ9e2G18Dx0BgPUz4PiYdg_a_gurg7c";  // 예: eyJhbGciOi...
 
 // 데모/오프라인 계정 (Supabase 미설정 시 사용) — users 테이블 시드와 동일하게 유지
 const DEMO_USERS = [
