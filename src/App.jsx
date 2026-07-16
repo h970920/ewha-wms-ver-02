@@ -180,12 +180,12 @@ function useFeedback(soundOn) {
     const seq =
       kind === "success" ? [[880, 0, 0.1], [1175, 0.1, 0.12]]
       : kind === "done" ? [[660, 0, 0.1], [880, 0.1, 0.1], [1320, 0.2, 0.18]]
+      : kind === "select" ? [[520, 0, 0.09]] // 파레트 선택: 짧은 단음 (적재음과 구분)
       : [[220, 0, 0.18], [180, 0.18, 0.22]]; // error
     seq.forEach(([freq, start, dur]) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = kind === "error" ? "square" : "sine";
-      osc.frequency.value = freq;
+      osc.type = kind === "error" ? "square" : "sine";      osc.frequency.value = freq;
       osc.connect(gain);
       gain.connect(ctx.destination);
       const t0 = ctx.currentTime + start;
@@ -226,8 +226,8 @@ function useFeedback(soundOn) {
 */
 
 // ▼ 배포 시 본인 Supabase 프로젝트 값으로 채우세요 (비워두면 데모 모드로 동작)
-const SUPABASE_URL = "https://wlrdsjgdmnaplfysztkm.supabase.co";       // 예: https://xxxxxxxx.supabase.co
-const SUPABASE_ANON_KEY = "sb_publishable_VRiue_JGGbExOeSKOZC_vg_om4Q3XV5";  // 예: eyJhbGciOi...
+const SUPABASE_URL = "";       // 예: https://xxxxxxxx.supabase.co
+const SUPABASE_ANON_KEY = "";  // 예: eyJhbGciOi...
 
 // 데모/오프라인 계정 (Supabase 미설정 시 사용) — users 테이블 시드와 동일하게 유지
 const DEMO_USERS = [
@@ -587,8 +587,9 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
     }
     setSelectedId(p.id);
     setPalletCode("");
-    triggerFlash("success");
-    fire("success", "파레트 선택");
+    // 파레트 선택은 '적재'가 아니므로 초록 플래시를 띄우지 않는다.
+    // (초록 화면 = 제품이 실제로 적재됨. 신호를 섞지 않기 위해 짧은 안내음만 재생)
+    fire("select", "파레트 선택");
     showBanner("info", `${p.id} 선택됨 (${p.target_factory}). 제품 QR을 스캔하세요.`);
     addLog({ event: "파레트 선택", pallet: p.id, qr: "", type: p.current_item_type || "", message: `${p.id} 선택` });
     setTimeout(() => productRef.current && productRef.current.focus(), 50);
@@ -602,8 +603,8 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
     }
     if (!res.ok) {
       triggerFlash("error");
-      if (res.error_code === "DUPLICATE") { fire("error", "이미 적재된 제품입니다"); addRecent({ qr, type: res.item_type || "", status: "dup" }); }
-      else if (res.error_code === "MIXED") { fire("error", "혼적입니다. 적재 차단"); addRecent({ qr, type: res.item_type || "", status: "mixed" }); }
+      if (res.error_code === "MIXED") { fire("error", "혼적입니다. 적재 차단"); addRecent({ qr, type: res.item_type || "", status: "mixed" }); }
+      else if (res.error_code === "FULL") { fire("error", "파레트가 가득 찼습니다"); }
       else fire("error", "적재할 수 없습니다");
       showBanner("error", res.message || "적재할 수 없습니다.");
       setProductInput("");
@@ -625,9 +626,10 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
     const qr = normalizeQr(rawQr);
     if (!qr) return;
 
-    // 무선 리더기 더블 발사 / Enter 연타 방지: 같은 QR을 1.2초 내 다시 받으면 무시
+    // 리더기 더블 발사(1회 스캔에 신호 2번) 방지.
+    // 같은 QR을 연속으로 찍는 것이 정상 작업이므로, 기계적 오발(수십~수백ms)만 걸러낸다.
     const now = Date.now();
-    if (lastScanRef.current.qr === qr && now - lastScanRef.current.at < 1200) {
+    if (lastScanRef.current.qr === qr && now - lastScanRef.current.at < 350) {
       setProductInput("");
       return;
     }
@@ -661,18 +663,10 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
       return;
     }
 
-    // 중복 QR 검사 (해당 파레트 + 전체)
-    const dupInPallet = selected.loaded_qrs.includes(qr);
-    const dupGlobal = pallets.some((p) => p.id !== selected.id && p.loaded_qrs.includes(qr));
-    if (dupInPallet || dupGlobal) {
-      triggerFlash("error");
-      fire("error", "이미 적재된 제품입니다");
-      showBanner("error", `중복 QR입니다. ${qr} 은 이미 적재되어 있습니다${dupGlobal && !dupInPallet ? " (다른 파레트)" : ""}.`);
-      addLog({ event: "중복 QR 경고", pallet: selected.id, qr, type: itemType, message: `중복: ${qr}` });
-      addRecent({ qr, type: itemType, status: "dup" });
-      setProductInput("");
-      return;
-    }
+    // 중복 검사 없음:
+    // 이화산업 QR은 '제품 개별 고유'가 아니라 '같은 종류=같은 QR'(로트/타입 단위)이다.
+    // 따라서 같은 QR을 9개까지 반복 적재하는 것이 정상 작업이다.
+    // 리더기 더블 발사만 위쪽 디바운스로 걸러낸다.
 
     // 혼적 검사
     const mixed = validateMixedLoading(selected.current_item_type, itemType);
@@ -703,7 +697,8 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
     }));
 
     // items 마스터 상태 갱신 (있으면 LOADED 처리)
-    setItems((prev) => prev.map((it) => it.item_qr === qr ? { ...it, status: "LOADED" } : it));
+    // items는 '제품 타입/로트 마스터'이므로 적재해도 상태를 소진 처리하지 않는다.
+    // (같은 QR이 계속 재사용되기 때문)
 
     const nextCount = selected.current_item_count + 1;
     addRecent({ qr, type: itemType, status: "ok", count: nextCount });
@@ -754,7 +749,9 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
     setPallets((prev) => prev.map((p) => {
       if (p.id !== palletId) return p;
       if (!p.loaded_qrs.includes(qr)) return p;
-      const remaining = p.loaded_qrs.filter((x) => x !== qr);
+      // 같은 QR이 여러 건 적재될 수 있으므로 '마지막 1건'만 제거한다.
+      const idx = p.loaded_qrs.lastIndexOf(qr);
+      const remaining = p.loaded_qrs.slice(0, idx).concat(p.loaded_qrs.slice(idx + 1));
       const newCount = Math.max(0, p.current_item_count - 1);
       return {
         ...p,
@@ -765,8 +762,10 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
         loaded_at: newCount === 0 ? null : p.loaded_at,
       };
     }));
-    setItems((prev) => prev.map((it) => it.item_qr === qr ? { ...it, status: "AVAILABLE" } : it));
-    setRecent((prev) => prev.filter((r) => !(r.qr === qr && r.status === "ok")).slice(0, 12));
+    setRecent((prev) => {
+      const i = prev.findIndex((r) => r.qr === qr && r.status === "ok");
+      return i === -1 ? prev : prev.slice(0, i).concat(prev.slice(i + 1));
+    });
     setSessionCount((c) => Math.max(0, c - 1));
     addLog({ event: "적재 취소", pallet: palletId, qr, type: lastLoaded.type, message: `${qr} 적재 취소(되돌림)` });
     showBanner("info", `마지막 적재를 취소했습니다: ${qr}`);
@@ -991,7 +990,7 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
                   placeholder={selected ? "제품 QR을 스캔하세요 (예: L5012504010350022M800)" : "먼저 파레트를 선택하세요"}
                   className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-4 text-xl font-mono tracking-wide text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed"
                 />
-                <p className="text-xs text-slate-500 mt-2">스캔 시 자동으로 제품 타입을 판별하고 혼적·중복을 검사합니다.</p>
+                <p className="text-xs text-slate-500 mt-2">스캔 시 자동으로 제품 타입을 판별하고 혼적을 검사합니다. 같은 제품 QR을 {PALLET_CAPACITY}개까지 반복 스캔하세요.</p>
               </div>
 
               {/* 최근 스캔 목록 */}
