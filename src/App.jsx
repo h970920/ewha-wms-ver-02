@@ -177,24 +177,38 @@ function useFeedback(soundOn) {
   const beep = useCallback((kind) => {
     const ctx = ensureCtx();
     if (!ctx) return;
+    // [주파수 설계]
+    // 공장 PC 스피커는 저음(200Hz대)이 거의 들리지 않는다.
+    // 따라서 경고음도 잘 들리는 중고음역(700~900Hz)에 '거친 사각파 + 3연타'로 만들어
+    // 성공음(맑은 2연음)과 확실히 구분되게 한다.
     const seq =
       kind === "success" ? [[880, 0, 0.1], [1175, 0.1, 0.12]]
       : kind === "done" ? [[660, 0, 0.1], [880, 0.1, 0.1], [1320, 0.2, 0.18]]
-      : kind === "select" ? [[520, 0, 0.09]] // 파레트 선택: 짧은 단음 (적재음과 구분)
-      : [[220, 0, 0.18], [180, 0.18, 0.22]]; // error
-    seq.forEach(([freq, start, dur]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = kind === "error" ? "square" : "sine";      osc.frequency.value = freq;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const t0 = ctx.currentTime + start;
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.02);
-    });
+      : kind === "select" ? [[520, 0, 0.09]] // 파레트 선택: 짧은 단음
+      : [[880, 0, 0.14], [660, 0.18, 0.14], [880, 0.36, 0.22]]; // error: 삐-삐-삐
+    const vol = kind === "error" ? 0.5 : 0.25; // 경고음은 더 크게
+
+    const play = () => {
+      seq.forEach(([freq, start, dur]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = kind === "error" ? "square" : "sine";
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const t0 = ctx.currentTime + start;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.02);
+      });
+    };
+
+    // 서버 응답을 기다린 뒤(await) 소리를 내면 브라우저가 오디오를 막아둔 상태일 수 있다.
+    // 이때는 resume이 끝난 다음에 재생해야 소리가 난다.
+    if (ctx.state === "suspended") ctx.resume().then(play).catch(() => {});
+    else play();
   }, [ensureCtx]);
 
   const speak = useCallback((text) => {
@@ -214,7 +228,14 @@ function useFeedback(soundOn) {
     if (voice) speak(voice);
   }, [soundOn, beep, speak]);
 
-  return fire;
+  // 버튼 클릭 같은 '사용자 동작' 시점에 오디오를 미리 깨워둔다.
+  // (이래야 이후 서버 응답 후에 내는 소리도 브라우저에 막히지 않는다)
+  const warmup = useCallback(() => {
+    const ctx = ensureCtx();
+    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  }, [ensureCtx]);
+
+  return { fire, warmup };
 }
 
 /* ============================================================
@@ -386,7 +407,7 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [soundOn, setSoundOn] = useState(true);
 
-  const fire = useFeedback(soundOn);
+  const { fire, warmup } = useFeedback(soundOn);
   const isAdmin = currentUser && currentUser.admin_type === 1;
 
   // 실DB 모드에서는 서버 로그가 진실원본이므로 클라이언트 로그는 기록하지 않음
@@ -471,6 +492,7 @@ export default function App() {
           logs={logs}
           addLog={addLog}
           fire={fire}
+          warmup={warmup}
           soundOn={soundOn}
           setSoundOn={setSoundOn}
           user={currentUser}
@@ -503,7 +525,7 @@ export default function App() {
    6. 작업자 페이지
    ============================================================ */
 
-function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, soundOn, setSoundOn, user, isAdmin, onLogout, api, goAdmin }) {
+function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, warmup, soundOn, setSoundOn, user, isAdmin, onLogout, api, goAdmin }) {
   const [scanMode, setScanMode] = useState(false);       // QR 스캔하기 클릭 여부
   const [palletCode, setPalletCode] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -792,6 +814,8 @@ function WorkerPage({ pallets, setPallets, items, setItems, logs, addLog, fire, 
   const startScan = () => {
     setScanMode(true);
     setShowHistory(false);
+    // 버튼 클릭(사용자 동작) 시점에 오디오/음성을 미리 깨워둔다.
+    if (warmup) warmup();
     // 음성 합성 사전 준비: 첫 스캔부터 음성이 끊김 없이 나오도록 워밍업
     if (soundOn && "speechSynthesis" in window) {
       try {
